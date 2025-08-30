@@ -1,4 +1,4 @@
-# 🕷️ Spider Map Guide - DARK FUNDS AML Dashboard
+# 🕷️ Spider Map Guide - FinTrace AML Dashboard
 
 ## Overview
 The Spider Map is an interactive network visualization that shows how money flows between accounts, helping you identify suspicious transaction patterns and relationships in your AML detection system.
