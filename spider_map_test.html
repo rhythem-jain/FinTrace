@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spider Map Test - DARK FUNDS</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://unpkg.com/cytoscape@3.24.0/dist/cytoscape.min.js"></script>
+    <script src="https://unpkg.com/cytoscape-cose-bilkent@4.1.0/cytoscape-cose-bilkent.js"></script>
+    <script>
+        if (typeof cytoscape !== 'undefined' && typeof window !== 'undefined' && cytoscape.use && window.cytoscapeCoseBilkent) {
+            cytoscape.use(window.cytoscapeCoseBilkent);
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            color: #667eea;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        .status {
+            text-align: center;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        #spider-map {
+            width: 100%;
+            height: 600px;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            background: white;
+        }
+        .controls {
+            text-align: center;
+            margin-top: 20px;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            margin: 0 5px;
+            transition: transform 0.3s ease;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        .legend {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .legend-item {
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+        }
+        .hub { background: #e74c3c; color: white; }
+        .high-value { background: #f39c12; color: white; }
+        .source { background: #27ae60; color: white; }
+        .sink { background: #8e44ad; color: white; }
+        .normal { background: #3498db; color: white; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🕷️ Spider Map Test</h1>
+            <p>Interactive Transaction Network Visualization</p>
+        </div>
+
+        <div class="status" id="status">
+            Loading spider map...
+        </div>
+
+        <div class="legend">
+            <div class="legend-item hub">🔴 Hub (High Activity)</div>
+            <div class="legend-item high-value">🟡 High Value</div>
+            <div class="legend-item source">🟢 Source (Money Origin)</div>
+            <div class="legend-item sink">🟣 Sink (Money Destination)</div>
+            <div class="legend-item normal">🔵 Normal</div>
+        </div>
+
+        <div id="spider-map"></div>
+
+        <div class="controls">
+            <button onclick="resetView()" class="btn">🔄 Reset View</button>
+            <button onclick="fitToScreen()" class="btn">📐 Fit to Screen</button>
+            <button onclick="toggleLabels()" class="btn">🏷️ Toggle Labels</button>
+            <button onclick="refreshMap()" class="btn">🔄 Refresh Data</button>
+        </div>
+    </div>
+
+    <script>
+        let cy = null;
+
+        async function loadSpiderMap() {
+            try {
+                document.getElementById('status').innerHTML = '🔄 Loading data from server...';
+                
+                const response = await axios.get('http://localhost:5000/api/spider-map');
+                const graphData = response.data;
+                
+                if (!graphData.nodes || !graphData.edges || graphData.nodes.length === 0) {
+                    document.getElementById('status').innerHTML = '❌ No data available';
+                    return;
+                }
+
+                document.getElementById('status').innerHTML = `✅ Loaded ${graphData.nodes.length} accounts and ${graphData.edges.length} transactions`;
+
+                if (typeof cytoscape === 'undefined') {
+                    document.getElementById('status').innerHTML = '❌ Cytoscape library not loaded';
+                    return;
+                }
+
+                cy = cytoscape({
+                    container: document.getElementById('spider-map'),
+                    elements: {
+                        nodes: graphData.nodes,
+                        edges: graphData.edges
+                    },
+                    style: [
+                        {
+                            selector: 'node',
+                            style: {
+                                'label': 'data(id)',
+                                'color': 'white',
+                                'text-valign': 'center',
+                                'text-halign': 'center',
+                                'width': 'mapData(total_degree, 0, 10, 20, 50)',
+                                'height': 'mapData(total_degree, 0, 10, 20, 50)',
+                                'font-size': '10px',
+                                'font-weight': 'bold'
+                            }
+                        },
+                        {
+                            selector: 'node[node_type = "hub"]',
+                            style: {
+                                'background-color': '#e74c3c',
+                                'width': 60,
+                                'height': 60,
+                                'font-size': '12px'
+                            }
+                        },
+                        {
+                            selector: 'node[node_type = "high_value"]',
+                            style: {
+                                'background-color': '#f39c12',
+                                'width': 50,
+                                'height': 50
+                            }
+                        },
+                        {
+                            selector: 'node[node_type = "source"]',
+                            style: {
+                                'background-color': '#27ae60',
+                                'width': 40,
+                                'height': 40
+                            }
+                        },
+                        {
+                            selector: 'node[node_type = "sink"]',
+                            style: {
+                                'background-color': '#8e44ad',
+                                'width': 40,
+                                'height': 40
+                            }
+                        },
+                        {
+                            selector: 'node[node_type = "normal"]',
+                            style: {
+                                'background-color': '#3498db'
+                            }
+                        },
+                        {
+                            selector: 'edge',
+                            style: {
+                                'width': 'mapData(weight, 0, 10000, 1, 5)',
+                                'line-color': '#2c3e50',
+                                'target-arrow-color': '#2c3e50',
+                                'target-arrow-shape': 'triangle',
+                                'curve-style': 'bezier',
+                                'label': 'data(weight)',
+                                'font-size': '8px',
+                                'text-rotation': 'autorotate'
+                            }
+                        }
+                    ],
+                    layout: {
+                        name: 'cose-bilkent',
+                        animate: true,
+                        animationDuration: 1000,
+                        nodeDimensionsIncludeLabels: true,
+                        fit: true,
+                        padding: 50
+                    }
+                });
+
+                // Add interactive features
+                cy.on('tap', 'node', function(evt) {
+                    const node = evt.target;
+                    const nodeData = node.data();
+                    alert(`Account: ${nodeData.id}\nType: ${nodeData.node_type}\nConnections: ${nodeData.total_degree}\nMoney In: $${nodeData.in_amount.toLocaleString()}\nMoney Out: $${nodeData.out_amount.toLocaleString()}`);
+                });
+
+                // Add zoom controls
+                const zoomIn = document.createElement('button');
+                zoomIn.innerHTML = '🔍+';
+                zoomIn.style.position = 'absolute';
+                zoomIn.style.top = '10px';
+                zoomIn.style.right = '50px';
+                zoomIn.style.zIndex = '1000';
+                zoomIn.onclick = () => cy.zoom(cy.zoom() * 1.2);
+                document.getElementById('spider-map').appendChild(zoomIn);
+
+                const zoomOut = document.createElement('button');
+                zoomOut.innerHTML = '🔍-';
+                zoomOut.style.position = 'absolute';
+                zoomOut.style.top = '10px';
+                zoomOut.style.right = '10px';
+                zoomOut.style.zIndex = '1000';
+                zoomOut.onclick = () => cy.zoom(cy.zoom() / 1.2);
+                document.getElementById('spider-map').appendChild(zoomOut);
+
+            } catch (error) {
+                console.error('Error loading spider map:', error);
+                document.getElementById('status').innerHTML = '❌ Error loading map: ' + error.message;
+            }
+        }
+
+        function resetView() {
+            if (cy) {
+                cy.reset();
+                cy.fit();
+            }
+        }
+
+        function fitToScreen() {
+            if (cy) {
+                cy.fit();
+            }
+        }
+
+        function toggleLabels() {
+            if (cy) {
+                const nodes = cy.nodes();
+                const currentStyle = nodes.style('label');
+                const newStyle = currentStyle === 'data(id)' ? '' : 'data(id)';
+                nodes.style('label', newStyle);
+                
+                const edges = cy.edges();
+                const currentEdgeStyle = edges.style('label');
+                const newEdgeStyle = currentEdgeStyle === 'data(weight)' ? '' : 'data(weight)';
+                edges.style('label', newEdgeStyle);
+            }
+        }
+
+        function refreshMap() {
+            if (cy) {
+                cy.destroy();
+            }
+            loadSpiderMap();
+        }
+
+        // Load map when page loads
+        document.addEventListener('DOMContentLoaded', loadSpiderMap);
+    </script>
+</body>
+</html> 

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FinTrace - AML Detection Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.24.0/cytoscape.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    #graph { width: 100%; height: 500px; border: 1px solid #ccc; margin-top: 20px; }
+    input, button { margin: 5px; padding: 5px; }
+  </style>
+</head>
+<body>
+  <h1>🚨 FinTrace - AML Detection Dashboard</h1>
+
+  <h3>Suspicious Accounts</h3>
+  <ul id="suspiciousList"></ul>
+
+  <h3>Filter Transactions</h3>
+  <input type="text" id="ip" placeholder="IP Address">
+  <input type="text" id="phone" placeholder="Phone Number">
+  <input type="text" id="email" placeholder="Email">
+  <button onclick="filterTransactions()">Filter</button>
+  <pre id="filterOutput"></pre>
+
+  <h3>Spider Map of Transactions</h3>
+  <div id="graph"></div>
+
+  <script>
+    async function loadSuspicious() {
+      const res = await axios.get('/api/suspicious');
+      const list = document.getElementById('suspiciousList');
+      list.innerHTML = res.data.map(acc => `<li>${acc}</li>`).join('');
+    }
+
+    async function filterTransactions() {
+      const ip = document.getElementById('ip').value;
+      const phone = document.getElementById('phone').value;
+      const email = document.getElementById('email').value;
+
+      const res = await axios.post('/api/filter', { ip, phone, email });
+      document.getElementById('filterOutput').innerText = JSON.stringify(res.data, null, 2);
+    }
+
+    async function drawGraph() {
+      const res = await axios.get('/api/graph');
+      const graphData = res.data;
+
+      const elements = [];
+      graphData.edges.forEach(edge => {
+        elements.push({ data: { id: edge.source } });
+        elements.push({ data: { id: edge.target } });
+        elements.push({
+          data: {
+            id: edge.source + '-' + edge.target,
+            source: edge.source,
+            target: edge.target,
+            label: edge.weight
+          },
+          style: {
+            'line-color': edge.color,
+            'target-arrow-color': edge.color,
+            'target-arrow-shape': 'triangle'
+          }
+        });
+      });
+
+      cytoscape({
+        container: document.getElementById('graph'),
+        elements,
+        style: [
+          { selector: 'node', style: { 'background-color': '#0074D9', 'label': 'data(id)', 'color': '#fff' }},
+          { selector: 'edge', style: {
+            'label': 'data(label)', 'width': 2,
+            'curve-style': 'bezier', 'target-arrow-shape': 'triangle'
+          }}
+        ],
+        layout: { name: 'cose', animate: true }
+      });
+    }
+
+    loadSuspicious();
+    drawGraph();
+  </script>
+</body>
+</html>
