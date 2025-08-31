@@ -364,11 +364,11 @@ def protected_api_route(rule, **options):
         return f
     return decorator
 
-def get_data(limit=1000):
-    """Get data with memory optimization - limit records to prevent RAM overflow"""
+def get_data(limit=5000):
+    """Get data with memory optimization - load progressively"""
     if 'uploaded_data_file' in session:
         try:
-            # Read only first 1000 rows to save memory
+            # Read limited rows to save memory
             df = pd.read_csv(session['uploaded_data_file'], nrows=limit)
             print(f"Loaded {len(df)} rows from uploaded file (limited for memory)")
             return df
@@ -411,7 +411,8 @@ def get_data(limit=1000):
 @protected_api_route('/api/suspicious')
 def suspicious_accounts():
     try:
-        df = get_data()
+        # Load limited data for memory efficiency
+        df = get_data(limit=3000)  # Reduced limit for suspicious accounts
         print(f"Debug: DataFrame shape: {df.shape}")
         
         # Check if DataFrame is empty
@@ -427,12 +428,21 @@ def suspicious_accounts():
             print("Debug: DataFrame empty after cleaning")
             return jsonify([])
             
-        aml_engine = AMLEngine()
-        suspicious = aml_engine.detect_suspicious_accounts(df)
-        print(f"Debug: Found {len(suspicious)} suspicious accounts")
+        # Use simpler detection for memory efficiency
+        suspicious_accounts = set()
+        
+        # Simple high-frequency detection
+        account_counts = df['from_account'].value_counts()
+        high_freq_accounts = account_counts[account_counts > 5].index.tolist()
+        suspicious_accounts.update(high_freq_accounts[:20])  # Limit to 20 accounts
+        
+        # Simple high-amount detection
+        high_amount_threshold = df['amount'].quantile(0.95)
+        high_amount_accounts = df[df['amount'] > high_amount_threshold]['from_account'].unique()[:20]
+        suspicious_accounts.update(high_amount_accounts)
         
         suspicious_details = []
-        for account in suspicious:
+        for account in list(suspicious_accounts)[:30]:  # Limit to 30 total
             account_rows = df[df['from_account'] == account]
             if account_rows.empty:
                 continue
@@ -443,8 +453,10 @@ def suspicious_accounts():
                 'phone': account_data.get('phone', ''),
                 'email': account_data.get('email', ''),
                 'total_transactions': len(account_rows),
-                'total_amount': account_rows['amount'].sum()
+                'total_amount': float(account_rows['amount'].sum())
             })
+        
+        print(f"Debug: Found {len(suspicious_details)} suspicious accounts")
         return jsonify(suspicious_details)
     except Exception as e:
         print(f"Error in suspicious_accounts: {e}")
@@ -455,7 +467,9 @@ def suspicious_accounts():
 @protected_api_route('/api/layered-analysis')
 def layered_analysis():
     try:
-        df = get_data()
+        # Load limited data for memory efficiency
+        df = get_data(limit=4000)  # Reduced limit for layered analysis
+        
         # Clean data: drop rows with missing critical columns
         df = df.dropna(subset=['from_account', 'to_account', 'amount', 'date'], how='any')
         if df.empty:
@@ -466,18 +480,32 @@ def layered_analysis():
                 'layer4_circular': [],
                 'layer5_rapid_movement': []
             })
-        aml_engine = AMLEngine()
-        freq_suspicious = aml_engine._detect_high_frequency(df)
-        amount_suspicious = aml_engine._detect_large_amounts(df)
-        multi_suspicious = aml_engine._detect_multi_identity(df)
-        circular_suspicious = aml_engine._detect_circular_transactions(df)
-        rapid_suspicious = aml_engine._detect_rapid_movement(df)
+        
+        # Use simpler detection methods for memory efficiency
+        # Layer 1: High frequency (simplified)
+        account_counts = df['from_account'].value_counts()
+        high_freq_accounts = account_counts[account_counts > 3].index.tolist()[:15]
+        
+        # Layer 2: Large amounts (simplified)
+        high_amount_threshold = df['amount'].quantile(0.90)
+        large_amount_accounts = df[df['amount'] > high_amount_threshold]['from_account'].unique()[:15]
+        
+        # Layer 3: Multi-identity (simplified)
+        multi_identity_accounts = []
+        for account in df['from_account'].unique()[:20]:  # Check only first 20 accounts
+            account_data = df[df['from_account'] == account]
+            if account_data['ip'].nunique() > 1 or account_data['phone'].nunique() > 1:
+                multi_identity_accounts.append(account)
+            if len(multi_identity_accounts) >= 10:  # Limit to 10
+                break
+        
         return jsonify({
-            'layer1_high_frequency': freq_suspicious,
-            'layer2_large_amounts': amount_suspicious,
-            'layer3_multi_identity': list(multi_suspicious),
-            'layer4_circular': list(circular_suspicious),
-            'layer5_rapid_movement': list(rapid_suspicious)
+            'layer1_high_frequency': high_freq_accounts,
+            'layer2_large_amounts': large_amount_accounts.tolist(),
+            'layer3_multi_identity': multi_identity_accounts,
+            'layer4_circular': [],  # Simplified - skip complex detection
+            'layer5_rapid_movement': [],  # Simplified - skip complex detection
+            'note': 'Simplified analysis for memory optimization'
         })
     except Exception as e:
         print(f"Error in layered_analysis: {e}")
@@ -486,7 +514,8 @@ def layered_analysis():
             'layer2_large_amounts': [],
             'layer3_multi_identity': [],
             'layer4_circular': [],
-            'layer5_rapid_movement': []
+            'layer5_rapid_movement': [],
+            'error': str(e)
         })
 
 @protected_api_route('/api/spider-map')
@@ -500,9 +529,22 @@ def spider_map():
         if len(df) == 0:
             return jsonify({'nodes': [], 'edges': [], 'error': 'No valid transactions to display.'})
         
-        aml_engine = AMLEngine()
-        df_sample = df.head(500)  # Limit for better performance
-        G = aml_engine.build_layered_graph(df_sample)
+        # Use much smaller sample for memory efficiency
+        df_sample = df.head(200)  # Reduced from 500 to 200 for memory
+        print(f"Debug: Using {len(df_sample)} transactions for spider map")
+        
+        # Simple graph building without complex AMLEngine
+        G = nx.DiGraph()
+        
+        # Add nodes and edges
+        for _, row in df_sample.iterrows():
+            G.add_node(row['from_account'], account_type='source')
+            G.add_node(row['to_account'], account_type='destination')
+            G.add_edge(row['from_account'], row['to_account'], 
+                      weight=float(row['amount']) if pd.notna(row['amount']) else 0,
+                      date=str(row['date']),
+                      time=str(row['time']),
+                      transaction_id=str(row['transaction_id']))
 
         if len(G) == 0:
             return jsonify({'nodes': [], 'edges': [], 'error': 'No valid transactions to display.'})
@@ -1275,12 +1317,12 @@ HTML_TEMPLATE = '''
                 <h3>📊 System Statistics</h3>
                 <div class="stats-grid" id="statsGrid">
                     <div class="loading">
-                    <div class="loader">
-                        <img class="loader-gif" src="/static/loading.gif" alt="Loading" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block';">
-                        <span class="spinner-fallback" style="display:none"></span>
-                        <span>Loading statistics...</span>
+                        <div class="loader">
+                            <img class="loader-gif" src="/static/loading.gif" alt="Loading" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block';">
+                            <span class="spinner-fallback" style="display:none"></span>
+                            <span>Loading statistics...</span>
+                        </div>
                     </div>
-                </div>
                 </div>
             </div>
             
@@ -1288,12 +1330,12 @@ HTML_TEMPLATE = '''
                 <h3>🔍 Suspicious Accounts</h3>
                 <div class="suspicious-list" id="suspiciousList">
                     <div class="loading">
-                    <div class="loader">
-                        <img class="loader-gif" src="/static/loading.gif" alt="Loading" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block';">
-                        <span class="spinner-fallback" style="display:none"></span>
-                        <span>Loading suspicious accounts...</span>
+                        <div class="loader">
+                            <img class="loader-gif" src="/static/loading.gif" alt="Loading" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block';">
+                            <span class="spinner-fallback" style="display:none"></span>
+                            <span>Loading suspicious accounts... (will load in 1 second)</span>
+                        </div>
                     </div>
-                </div>
                 </div>
             </div>
         </div>
@@ -1306,7 +1348,7 @@ HTML_TEMPLATE = '''
                     <div class="loader">
                         <img class="loader-gif" src="/static/loading.gif" alt="Loading" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block';">
                         <span class="spinner-fallback" style="display:none"></span>
-                        <span>Loading layered analysis...</span>
+                        <span>Loading layered analysis... (will load in 2 seconds)</span>
                     </div>
                 </div>
             </div>
@@ -1341,7 +1383,7 @@ HTML_TEMPLATE = '''
                     <span class="loader" style="gap:8px; padding: 6px 0;">
                         <img class="loader-gif" src="/static/loading.gif" alt="Loading" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block';">
                         <span class="spinner-fallback" style="display:none"></span>
-                        Loading spider map...
+                        Loading spider map... (will load in 3 seconds)
                     </span>
                 </span>
             </div>
@@ -1355,12 +1397,15 @@ HTML_TEMPLATE = '''
     </div>
 
     <script>
-        // Load all data on page load
+        // Progressive loading - load sections one by one to manage memory
         document.addEventListener('DOMContentLoaded', function() {
+            // Load statistics first (lightweight)
             loadStatistics();
-            loadSuspiciousAccounts();
-            loadLayeredAnalysis();
-            loadSpiderMap();
+            
+            // Load other sections progressively with delays
+            setTimeout(() => loadSuspiciousAccounts(), 1000);
+            setTimeout(() => loadLayeredAnalysis(), 2000);
+            setTimeout(() => loadSpiderMap(), 3000);
         });
 
         async function loadStatistics() {

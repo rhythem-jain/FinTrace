@@ -3,8 +3,8 @@ services:
     name: fintrace
     env: python
     plan: free
-    buildCommand: pip install -r requirements_lightweight.txt
-    startCommand: gunicorn app_lightweight:app
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
     # Alternative start command if gunicorn fails:
     # startCommand: python start_production.py
     envVars:
