@@ -238,48 +238,62 @@ def is_valid_number(val):
 # -------------------------
 @app.before_request
 def load_data():
+    # Skip data loading for health checks and static files
+    if request.path == '/' or request.path.startswith('/static'):
+        return
+        
     if Transaction.query.count() == 0:
-        print("Loading transaction data from Excel...")
-        df = pd.read_excel('../archive/bank.xlsx')
-        txn_id = 1
-        for _, row in df.iterrows():
-            deposit_amt = row.get('DEPOSIT AMT')
-            withdrawal_amt = row.get('WITHDRAWAL AMT')
-            amount = None
-            transaction_type = None
-            if is_valid_number(deposit_amt) and float(str(deposit_amt).replace(',', '')) != 0.0:
-                amount = float(str(deposit_amt).replace(',', ''))
-                transaction_type = 'deposit'
-            elif is_valid_number(withdrawal_amt) and float(str(withdrawal_amt).replace(',', '')) != 0.0:
-                amount = -float(str(withdrawal_amt).replace(',', ''))
-                transaction_type = 'withdrawal'
-            else:
-                continue  # skip rows with no amount
-            from_account = str(row.get('Account No', ''))
-            details = str(row.get('TRANSACTION DETAILS', ''))
-            to_account = 'UNKNOWN'
-            match = re.search(r'\b\d{9,}\b', details)
-            if match:
-                to_account = match.group(0)
-            txn = Transaction(
-                **{
-                    'case_id': 'CASE001',
-                    'transaction_id': f'TXN{txn_id:06d}',
-                    'from_account': from_account,
-                    'to_account': to_account,
-                    'amount': amount,
-                    'date': str(row.get('VALUE DATE', '')),
-                    'time': '12:00:00',
-                    'ip': '192.168.1.1',
-                    'phone': '+1234567890',
-                    'email': 'user@example.com',
-                    'transaction_type': 'transfer'
-                }
-            )
-            db.session.add(txn)
-            txn_id += 1
-        db.session.commit()
-        print(f"Loaded {txn_id-1} transactions from Excel")
+        try:
+            print("Loading transaction data from Excel...")
+            # Check if the Excel file exists before trying to read it
+            excel_path = '../archive/bank.xlsx'
+            if not os.path.exists(excel_path):
+                print(f"Excel file not found at {excel_path}, skipping data load")
+                return
+                
+            df = pd.read_excel(excel_path)
+            txn_id = 1
+            for _, row in df.iterrows():
+                deposit_amt = row.get('DEPOSIT AMT')
+                withdrawal_amt = row.get('WITHDRAWAL AMT')
+                amount = None
+                transaction_type = None
+                if is_valid_number(deposit_amt) and float(str(deposit_amt).replace(',', '')) != 0.0:
+                    amount = float(str(deposit_amt).replace(',', ''))
+                    transaction_type = 'deposit'
+                elif is_valid_number(withdrawal_amt) and float(str(withdrawal_amt).replace(',', '')) != 0.0:
+                    amount = -float(str(withdrawal_amt).replace(',', ''))
+                    transaction_type = 'withdrawal'
+                else:
+                    continue  # skip rows with no amount
+                from_account = str(row.get('Account No', ''))
+                details = str(row.get('TRANSACTION DETAILS', ''))
+                to_account = 'UNKNOWN'
+                match = re.search(r'\b\d{9,}\b', details)
+                if match:
+                    to_account = match.group(0)
+                txn = Transaction(
+                    **{
+                        'case_id': 'CASE001',
+                        'transaction_id': f'TXN{txn_id:06d}',
+                        'from_account': from_account,
+                        'to_account': to_account,
+                        'amount': amount,
+                        'date': str(row.get('VALUE DATE', '')),
+                        'time': '12:00:00',
+                        'ip': '192.168.1.1',
+                        'phone': '+1234567890',
+                        'email': 'user@example.com',
+                        'transaction_type': 'transfer'
+                    }
+                )
+                db.session.add(txn)
+                txn_id += 1
+            db.session.commit()
+            print(f"Loaded {txn_id-1} transactions from Excel")
+        except Exception as e:
+            print(f"Error loading Excel data: {e}")
+            # Continue without loading data - don't block the app
 
 def login_required(f):
     @wraps(f)
@@ -291,7 +305,13 @@ def login_required(f):
 
 @app.route('/')
 def root():
-    return redirect(url_for('get_started'))
+    """Main route - serve welcome page directly for faster response"""
+    return render_template_string(WELCOME_TEMPLATE)
+
+@app.route('/health')
+def health_check():
+    """Fast health check endpoint for Render"""
+    return jsonify({'status': 'healthy', 'message': 'FinTrace is running'}), 200
 
 @app.route('/dashboard')
 def dashboard():
@@ -2428,4 +2448,15 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     
     app.run(debug=debug_mode, host=host, port=port)
+
+# Database initialization function
+def initialize_database():
+    """Initialize database tables when needed"""
+    try:
+        with app.app_context():
+            db.create_all()
+            print("Database tables initialized")
+    except Exception as e:
+        print(f"Database initialization error: {e}")
+        # Continue without database - don't block the app
 

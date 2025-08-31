@@ -18,5 +18,5 @@ services:
         generateValue: true
       - key: DATABASE_URL
         value: sqlite:///instance/transactions.db
-    healthCheckPath: /
+    healthCheckPath: /health
     autoDeploy: true
