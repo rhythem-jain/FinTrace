@@ -370,18 +370,61 @@ def get_data():
             return pd.read_csv(session['uploaded_data_file'])
         except Exception:
             pass  # fallback to DB if file missing/corrupt
-    return pd.read_sql_table('transaction', db.engine)
+    
+    try:
+        # Use SQLAlchemy query instead of pandas read_sql_table
+        with app.app_context():
+            # Query all transactions and convert to DataFrame
+            transactions = Transaction.query.all()
+            if not transactions:
+                return pd.DataFrame()
+            
+            # Convert to list of dictionaries
+            data = []
+            for txn in transactions:
+                data.append({
+                    'case_id': txn.case_id,
+                    'transaction_id': txn.transaction_id,
+                    'from_account': txn.from_account,
+                    'to_account': txn.to_account,
+                    'amount': txn.amount,
+                    'date': txn.date,
+                    'time': txn.time,
+                    'ip': txn.ip,
+                    'phone': txn.phone,
+                    'email': txn.email,
+                    'transaction_type': txn.transaction_type
+                })
+            
+            return pd.DataFrame(data)
+    except Exception as e:
+        print(f"Database read error: {e}")
+        # Return empty DataFrame if database fails
+        return pd.DataFrame()
 
 @protected_api_route('/api/suspicious')
 def suspicious_accounts():
     try:
         df = get_data()
+        print(f"Debug: DataFrame shape: {df.shape}")
+        
+        # Check if DataFrame is empty
+        if df.empty:
+            print("Debug: DataFrame is empty, returning empty list")
+            return jsonify([])
+            
         # Clean data: drop rows with missing critical columns
         df = df.dropna(subset=['from_account', 'to_account', 'amount', 'date'], how='any')
+        print(f"Debug: After cleaning, DataFrame shape: {df.shape}")
+        
         if df.empty:
+            print("Debug: DataFrame empty after cleaning")
             return jsonify([])
+            
         aml_engine = AMLEngine()
         suspicious = aml_engine.detect_suspicious_accounts(df)
+        print(f"Debug: Found {len(suspicious)} suspicious accounts")
+        
         suspicious_details = []
         for account in suspicious:
             account_rows = df[df['from_account'] == account]
@@ -399,6 +442,8 @@ def suspicious_accounts():
         return jsonify(suspicious_details)
     except Exception as e:
         print(f"Error in suspicious_accounts: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify([])
 
 @protected_api_route('/api/layered-analysis')
