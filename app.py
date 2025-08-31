@@ -364,20 +364,26 @@ def protected_api_route(rule, **options):
         return f
     return decorator
 
-def get_data():
+def get_data(limit=1000):
+    """Get data with memory optimization - limit records to prevent RAM overflow"""
     if 'uploaded_data_file' in session:
         try:
-            return pd.read_csv(session['uploaded_data_file'])
+            # Read only first 1000 rows to save memory
+            df = pd.read_csv(session['uploaded_data_file'], nrows=limit)
+            print(f"Loaded {len(df)} rows from uploaded file (limited for memory)")
+            return df
         except Exception:
             pass  # fallback to DB if file missing/corrupt
     
     try:
-        # Use SQLAlchemy query instead of pandas read_sql_table
+        # Use SQLAlchemy query with LIMIT to prevent memory overflow
         with app.app_context():
-            # Query all transactions and convert to DataFrame
-            transactions = Transaction.query.all()
+            # Query only limited transactions to save memory
+            transactions = Transaction.query.limit(limit).all()
             if not transactions:
                 return pd.DataFrame()
+            
+            print(f"Loaded {len(transactions)} transactions from database (limited for memory)")
             
             # Convert to list of dictionaries
             data = []
@@ -656,21 +662,51 @@ def get_cases():
 
 @protected_api_route('/api/statistics')
 def get_statistics():
-    """Get overall statistics"""
-    df = get_data()
-    
-    stats = {
-        'total_transactions': len(df),
-        'total_cases': df['case_id'].nunique(),
-        'total_accounts': len(set(df['from_account'].tolist() + df['to_account'].tolist())),
-        'total_amount': df['amount'].sum(),
-        'avg_amount': df['amount'].mean(),
-        'unique_ips': df['ip'].nunique(),
-        'unique_phones': df['phone'].nunique(),
-        'unique_emails': df['email'].nunique()
-    }
-    
-    return jsonify(stats)
+    """Get overall statistics with memory optimization"""
+    try:
+        # Use limited data for memory efficiency
+        df = get_data(limit=5000)  # Increased limit for better stats
+        
+        if df.empty:
+            return jsonify({
+                'total_transactions': 0,
+                'total_cases': 0,
+                'total_accounts': 0,
+                'total_amount': 0,
+                'avg_amount': 0,
+                'unique_ips': 0,
+                'unique_phones': 0,
+                'unique_emails': 0,
+                'note': 'Limited data for memory optimization'
+            })
+        
+        # Calculate stats efficiently
+        stats = {
+            'total_transactions': len(df),
+            'total_cases': df['case_id'].nunique() if 'case_id' in df.columns else 0,
+            'total_accounts': len(set(df['from_account'].tolist() + df['to_account'].tolist())),
+            'total_amount': float(df['amount'].sum()) if 'amount' in df.columns else 0,
+            'avg_amount': float(df['amount'].mean()) if 'amount' in df.columns else 0,
+            'unique_ips': df['ip'].nunique() if 'ip' in df.columns else 0,
+            'unique_phones': df['phone'].nunique() if 'phone' in df.columns else 0,
+            'unique_emails': df['email'].nunique() if 'email' in df.columns else 0,
+            'note': f'Showing {len(df)} transactions (limited for memory optimization)'
+        }
+        
+        return jsonify(stats)
+    except Exception as e:
+        print(f"Error in statistics: {e}")
+        return jsonify({
+            'total_transactions': 0,
+            'total_cases': 0,
+            'total_accounts': 0,
+            'total_amount': 0,
+            'avg_amount': 0,
+            'unique_ips': 0,
+            'unique_phones': 0,
+            'unique_emails': 0,
+            'error': str(e)
+        })
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
