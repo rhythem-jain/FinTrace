@@ -20,9 +20,12 @@ import uuid
 import time
   
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///transactions.db'
+# Database configuration - use environment variable if available
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///instance/transactions.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.secret_key = 'supersecretkey'  # Needed for session
+
+# Secret key configuration - use environment variable if available
+app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey')  # Needed for session
 db = SQLAlchemy(app)
 
 # Remove User model
@@ -2418,5 +2421,11 @@ def logout():
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    
+    # Production vs Development configuration
+    debug_mode = os.environ.get('FLASK_DEBUG', '0') == '1'
+    host = os.environ.get('HOST', '0.0.0.0')
+    port = int(os.environ.get('PORT', 5000))
+    
+    app.run(debug=debug_mode, host=host, port=port)
 

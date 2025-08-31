@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: fintrace
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    # Alternative start command if gunicorn fails:
+    # startCommand: python start_production.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.16
+      - key: FLASK_ENV
+        value: production
+      - key: FLASK_DEBUG
+        value: 0
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        value: sqlite:///instance/transactions.db
+    healthCheckPath: /
+    autoDeploy: true

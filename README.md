@@ -57,6 +57,39 @@ The Layered AML (Anti-Money Laundering) Detection System is an advanced financia
    - Open your browser and navigate to `http://localhost:5000`
    - The system will automatically load transaction data from `large_sample_transactions.csv`
 
+## 🚀 Deployment on Render
+
+### Quick Deployment
+
+1. **Check deployment readiness:**
+   ```bash
+   # Windows
+   check_deployment.bat
+   
+   # Linux/Mac
+   python deploy_to_render.py
+   ```
+
+2. **Deploy to Render:**
+   - Push your code to GitHub
+   - Go to [render.com](https://render.com) and create a new Blueprint
+   - Connect your GitHub repository
+   - Render will automatically detect the `render.yaml` configuration
+   - Click "Apply" to deploy
+
+### Manual Deployment
+
+1. **Create a new Web Service on Render**
+2. **Configure:**
+   - **Build Command:** `pip install -r requirements.txt`
+   - **Start Command:** `gunicorn app:app`
+   - **Environment:** Python 3
+3. **Set Environment Variables:**
+   - `FLASK_ENV`: `production`
+   - `FLASK_DEBUG`: `0`
+
+📖 **Detailed deployment guide:** See [RENDER_DEPLOYMENT.md](RENDER_DEPLOYMENT.md)
+
 ## 📊 Data Structure
 
 The system processes transaction data with the following fields:
