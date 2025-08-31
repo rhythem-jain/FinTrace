@@ -23,9 +23,16 @@ app = Flask(__name__)
 # Database configuration - use environment variable if available
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///instance/transactions.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': False,
+    'pool_recycle': 300,
+    'connect_args': {'check_same_thread': False}
+}
 
 # Secret key configuration - use environment variable if available
 app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey')  # Needed for session
+
+# Initialize SQLAlchemy with lazy loading
 db = SQLAlchemy(app)
 
 # Remove User model
@@ -239,7 +246,7 @@ def is_valid_number(val):
 @app.before_request
 def load_data():
     # Skip data loading for health checks and static files
-    if request.path == '/' or request.path.startswith('/static'):
+    if request.path in ['/', '/static', '/ping', '/health', '/status']:
         return
         
     if Transaction.query.count() == 0:
@@ -328,8 +335,22 @@ def health_check():
 
 @app.route('/status')
 def status():
-    """Ultra-simple status endpoint for Render health checks"""
+    """Ultra-simple status endpoint for Render health checks - ZERO database access"""
+    # This endpoint should NEVER touch the database
     return "OK", 200
+
+# Import the isolated health check
+try:
+    from health_check import create_health_check
+    ping_handler = create_health_check()
+except ImportError:
+    def ping_handler():
+        return "OK", 200
+
+@app.route('/ping')
+def ping():
+    """Absolute minimal health check - ZERO database access"""
+    return ping_handler()
 
 @app.route('/dashboard')
 def dashboard():
