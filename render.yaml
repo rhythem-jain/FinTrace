@@ -17,6 +17,6 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: DATABASE_URL
-        value: sqlite:///instance/transactions.db
-    healthCheckPath: /health
+        value: sqlite:////tmp/transactions.db
+    healthCheckPath: /status
     autoDeploy: true

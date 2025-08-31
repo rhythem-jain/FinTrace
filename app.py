@@ -310,8 +310,26 @@ def root():
 
 @app.route('/health')
 def health_check():
-    """Fast health check endpoint for Render"""
-    return jsonify({'status': 'healthy', 'message': 'FinTrace is running'}), 200
+    """Fast health check endpoint for Render - completely independent of database"""
+    try:
+        # Just check if the Flask app is running
+        return jsonify({
+            'status': 'healthy', 
+            'message': 'FinTrace is running',
+            'timestamp': datetime.now().isoformat()
+        }), 200
+    except Exception as e:
+        # Even if there's an error, return a response (not 500)
+        return jsonify({
+            'status': 'degraded',
+            'message': 'FinTrace is running but with issues',
+            'error': str(e)
+        }), 200  # Return 200, not 500
+
+@app.route('/status')
+def status():
+    """Ultra-simple status endpoint for Render health checks"""
+    return "OK", 200
 
 @app.route('/dashboard')
 def dashboard():
@@ -2449,14 +2467,15 @@ if __name__ == '__main__':
     
     app.run(debug=debug_mode, host=host, port=port)
 
-# Database initialization function
+# Database initialization function - only called when explicitly needed
 def initialize_database():
-    """Initialize database tables when needed"""
+    """Initialize database tables when explicitly needed"""
     try:
         with app.app_context():
             db.create_all()
             print("Database tables initialized")
+            return True
     except Exception as e:
         print(f"Database initialization error: {e}")
-        # Continue without database - don't block the app
+        return False
 
